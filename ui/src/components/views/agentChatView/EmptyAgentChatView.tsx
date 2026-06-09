@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Card, Space, Typography, Select } from "antd";
+import { Card, Typography, Select, message as antdMessage } from "antd";
 import {
   BulbOutlined,
   MessageOutlined,
@@ -17,6 +17,27 @@ import { getAgentEmoji } from "../../../utils";
 import { useChatSessions } from "../../../hooks/useChatSessions.ts";
 
 const { Title, Text } = Typography;
+
+const quickActions = [
+  {
+    title: "智能对话",
+    description: "让助手拆解任务、补充思路，并给出可执行建议",
+    icon: <RobotOutlined className="text-white text-xl" />,
+    className: "from-blue-500 to-cyan-500",
+  },
+  {
+    title: "知识问答",
+    description: "结合已上传的 Markdown 知识库检索上下文",
+    icon: <BulbOutlined className="text-white text-xl" />,
+    className: "from-emerald-500 to-teal-500",
+  },
+  {
+    title: "过程可见",
+    description: "通过 SSE 实时展示规划、思考与工具执行状态",
+    icon: <MessageOutlined className="text-white text-xl" />,
+    className: "from-amber-500 to-rose-500",
+  },
+];
 
 interface DefaultAgentChatViewProps {
   handleSendMessage: (message: string) => void;
@@ -49,6 +70,32 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
     }
     return agents.length > 0 ? agents[0].id : null;
   }, [selectedAgentId, agents]);
+
+  const handleSubmit = async () => {
+    const trimmedMessage = message.trim();
+    if (!effectiveAgentId) {
+      antdMessage.warning("请先创建一个智能体助手");
+      return;
+    }
+    if (!trimmedMessage) {
+      antdMessage.warning("请输入要发送的消息");
+      return;
+    }
+
+    const response = await createChatSession({
+      agentId: effectiveAgentId,
+      title: trimmedMessage.slice(0, 20),
+    });
+    await createChatMessage({
+      sessionId: response.chatSessionId ?? "",
+      content: trimmedMessage,
+      role: "user",
+      agentId: effectiveAgentId,
+    });
+    await refreshChatSessions();
+    setMessage("");
+    navigate(`/chat/${response.chatSessionId}`);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -83,98 +130,42 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
         <div className="max-w-2xl w-full space-y-6">
           <div className="text-center mb-8">
             <Title level={2} className="mb-2">
-              开始新的对话
+              ThinkLoop Agent 工作台
             </Title>
             <Text type="secondary" className="text-base">
-              选择一个智能体助手开始聊天，或直接发送消息创建新会话
+              选择智能体后发起任务，观察模型规划、工具调用与知识库检索过程
             </Text>
           </div>
-          <Space orientation="vertical" size="large" className="w-full">
-            <Card
-              hoverable
-              className="cursor-pointer transition-all hover:shadow-lg"
-            >
-              <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
-                  <RobotOutlined className="text-white text-xl" />
+          <div className="grid gap-4 md:grid-cols-3">
+            {quickActions.map((action) => (
+              <Card
+                key={action.title}
+                hoverable
+                className="h-full transition-all hover:shadow-lg"
+              >
+                <div
+                  className={`mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br ${action.className}`}
+                >
+                  {action.icon}
                 </div>
-                <div>
-                  <Title level={5} className="mb-1">
-                    智能对话
-                  </Title>
-                  <Text type="secondary">
-                    与 AI 助手进行智能对话，获取帮助和建议
-                  </Text>
-                </div>
-              </Space>
-            </Card>
-
-            <Card
-              hoverable
-              className="cursor-pointer transition-all hover:shadow-lg"
-            >
-              <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center">
-                  <BulbOutlined className="text-white text-xl" />
-                </div>
-                <div>
-                  <Title level={5} className="mb-1">
-                    知识问答
-                  </Title>
-                  <Text type="secondary">
-                    基于知识库进行问答，获取准确的信息
-                  </Text>
-                </div>
-              </Space>
-            </Card>
-
-            <Card
-              hoverable
-              className="cursor-pointer transition-all hover:shadow-lg"
-            >
-              <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-red-400 flex items-center justify-center">
-                  <MessageOutlined className="text-white text-xl" />
-                </div>
-                <div>
-                  <Title level={5} className="mb-1">
-                    快速开始
-                  </Title>
-                  <Text type="secondary">
-                    在下方输入框输入消息，立即开始对话
-                  </Text>
-                </div>
-              </Space>
-            </Card>
-          </Space>
+                <Title level={5} className="mb-2">
+                  {action.title}
+                </Title>
+                <Text type="secondary" className="text-sm">
+                  {action.description}
+                </Text>
+              </Card>
+            ))}
+          </div>
         </div>
       </div>
       <div className="border-t border-gray-200 bg-white">
         {/* 输入框 */}
         <div className="px-4 pb-4 pt-4">
           <Sender
-            onSubmit={async () => {
-              if (!effectiveAgentId) return;
-              console.log("发送消息", message);
-              const response = await createChatSession({
-                agentId: effectiveAgentId,
-                title: message.slice(0, 20),
-              });
-              await createChatMessage({
-                sessionId: response.chatSessionId ?? "",
-                content: message,
-                role: "user",
-                agentId: effectiveAgentId,
-              });
-              // 刷新聊天会话列表
-              await refreshChatSessions();
-              setMessage("");
-              navigate(
-                `/chat/${response.chatSessionId}`,
-              );
-            }}
+            onSubmit={handleSubmit}
             value={message}
-            loading={loading}
+            loading={loading || agents.length === 0}
             placeholder="输入消息开始对话..."
             onChange={(value) => {
               setMessage(value);

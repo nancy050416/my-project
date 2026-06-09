@@ -1,4 +1,5 @@
 import { message } from "antd";
+import { API_BASE_URL } from "../config/env";
 
 // API 响应类型定义，匹配后端 ApiResponse 结构
 export interface ApiResponse<T = unknown> {
@@ -12,15 +13,18 @@ export interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | null | undefined>;
 }
 
-// API 基础路径（可以根据环境变量配置）
-export const BASE_URL = "http://localhost:8080/api";
+// API 基础路径，可通过 VITE_API_BASE_URL 覆盖
+export const BASE_URL = API_BASE_URL;
 
 /**
  * 构建完整的 URL（包含查询参数）
  */
-function buildUrl(url: string, params?: Record<string, string | number | boolean | null | undefined>): string {
+function buildUrl(
+  url: string,
+  params?: Record<string, string | number | boolean | null | undefined>,
+): string {
   const fullUrl = `${BASE_URL}${url}`;
-  
+
   if (!params || Object.keys(params).length === 0) {
     return fullUrl;
   }
@@ -61,7 +65,7 @@ async function handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
  */
 async function request<T = unknown>(
   url: string,
-  options: RequestOptions = {}
+  options: RequestOptions = {},
 ): Promise<T> {
   const { params, headers, ...restOptions } = options;
 

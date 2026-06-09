@@ -12,6 +12,7 @@ import {
 import { useAgents } from "../../hooks/useAgents.ts";
 import { useChatSessions } from "../../hooks/useChatSessions.ts";
 import EmptyAgentChatView from "./agentChatView/EmptyAgentChatView.tsx";
+import { SSE_BASE_URL } from "../../config/env.ts";
 import type { ChatMessageVO, SseMessage, SseMessageType } from "../../types";
 
 const AgentChatView: React.FC = () => {
@@ -34,15 +35,13 @@ const AgentChatView: React.FC = () => {
     if (!chatSessionId) {
       return;
     }
-    const resp = await getChatMessagesBySessionId(chatSessionId);
-    setMessages(resp.chatMessages);
+    const [messagesResp, sessionResp] = await Promise.all([
+      getChatMessagesBySessionId(chatSessionId),
+      getChatSession(chatSessionId),
+    ]);
 
-    const fetchData = async () => {
-      const resp = await getChatSession(chatSessionId);
-      // setChatSession(resp.chatSession);
-      setAgentId(resp.chatSession.agentId);
-    };
-    fetchData().then();
+    setMessages(messagesResp.chatMessages);
+    setAgentId(sessionResp.chatSession.agentId);
   }, [chatSessionId]);
 
   useEffect(() => {
@@ -55,8 +54,6 @@ const AgentChatView: React.FC = () => {
   const handleSendMessage = async (value: string | { text: string }) => {
     // 处理 Sender 组件可能传递的不同格式
     const message = typeof value === "string" ? value : value.text;
-
-    console.log(message);
 
     if (!message || !message.trim()) return;
 
@@ -91,7 +88,6 @@ const AgentChatView: React.FC = () => {
       }
     } else {
       if (state?.init) {
-        console.log("init", state.initMessage);
         await createChatMessage({
           agentId: agentId ?? "",
           sessionId: chatSessionId,
@@ -99,7 +95,6 @@ const AgentChatView: React.FC = () => {
           content: state.initMessage ?? "",
         });
       } else {
-        console.log("ask", message);
         await createChatMessage({
           agentId: agentId ?? "",
           sessionId: chatSessionId,
@@ -122,49 +117,46 @@ const AgentChatView: React.FC = () => {
     if (!chatSessionId) {
       return;
     }
-    const es = new EventSource(
-      `http://localhost:8080/sse/connect/${chatSessionId}`,
-    );
-    es.onmessage = (event) => {
-      console.log("Received message:", event.data);
-    };
+    const es = new EventSource(`${SSE_BASE_URL}/connect/${chatSessionId}`);
+
     es.onerror = (error) => {
       console.error("SSE error:", error);
+      setDisplayAgentStatus(true);
+      setAgentStatusText("实时连接暂时不可用，正在等待后端恢复");
+      setAgentStatusType("AI_EXECUTING");
     };
 
     es.addEventListener("message", (event) => {
-      // 解析 JSON
-      const message = JSON.parse(event.data) as SseMessage;
-      if (message.type === "AI_GENERATED_CONTENT") {
-        // 将 AI 生成的内容存到 messages 中
-        addMessage(message.payload.message);
-      } else if (message.type === "AI_PLANNING") {
+      try {
+        const message = JSON.parse(event.data) as SseMessage;
+        if (message.type === "AI_GENERATED_CONTENT") {
+          addMessage(message.payload.message);
+        } else if (message.type === "AI_PLANNING") {
+          setDisplayAgentStatus(true);
+          setAgentStatusText(message.payload.statusText);
+          setAgentStatusType("AI_PLANNING");
+        } else if (message.type === "AI_THINKING") {
+          setDisplayAgentStatus(true);
+          setAgentStatusText(message.payload.statusText);
+          setAgentStatusType("AI_THINKING");
+        } else if (message.type === "AI_EXECUTING") {
+          setDisplayAgentStatus(true);
+          setAgentStatusText(message.payload.statusText);
+          setAgentStatusType("AI_EXECUTING");
+        } else if (message.type === "AI_DONE") {
+          setDisplayAgentStatus(false);
+          setAgentStatusText("");
+          setAgentStatusType(undefined);
+        }
+      } catch (error) {
+        console.error("Failed to parse SSE message:", error);
         setDisplayAgentStatus(true);
-        setAgentStatusText(message.payload.statusText);
-        setAgentStatusType("AI_PLANNING");
-      } else if (message.type === "AI_THINKING") {
-        setDisplayAgentStatus(true);
-        setAgentStatusText(message.payload.statusText);
-        setAgentStatusType("AI_THINKING");
-      } else if (message.type === "AI_EXECUTING") {
-        setDisplayAgentStatus(true);
-        setAgentStatusText(message.payload.statusText);
+        setAgentStatusText("收到异常的实时消息，已忽略并继续监听");
         setAgentStatusType("AI_EXECUTING");
-      } else if (message.type === "AI_DONE") {
-        setDisplayAgentStatus(false);
-        setAgentStatusText("");
-        setAgentStatusType(undefined);
-      } else {
-        throw new Error(`Unknown message type: ${message.type}`);
       }
     });
 
-    es.addEventListener("init", (event) => {
-      console.log("Received init message:", event.data);
-    });
-
     return () => {
-      console.log("Closing SSE connection.");
       es.close();
     };
   }, [chatSessionId]);
